@@ -7,8 +7,10 @@ from io import StringIO
 from services.ai_service import (
     build_ai_context,
     generate_insights,
-    generate_query
+    generate_query,
+    generate_chart_insights
 )
+from fastapi.responses import FileResponse
 from services.query_service import execute_query
 from services.plot_service import generate_plot
 
@@ -17,7 +19,9 @@ app = FastAPI()
 stored_df: pd.DataFrame | None = None
 
 
-# ---------- Utilities ----------
+# =====================================================
+# Utilities
+# =====================================================
 
 def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.replace([np.inf, -np.inf], None)
@@ -25,7 +29,9 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ---------- Upload CSV ----------
+# =====================================================
+# Upload CSV
+# =====================================================
 
 @app.post("/upload")
 async def upload_csv(file: UploadFile = File(...)):
@@ -47,7 +53,9 @@ async def upload_csv(file: UploadFile = File(...)):
     }
 
 
-# ---------- Dataset Overview ----------
+# =====================================================
+# Dataset Overview
+# =====================================================
 
 @app.get("/stats")
 def get_stats():
@@ -64,7 +72,9 @@ def get_stats():
     }
 
 
-# ---------- Column Analytics ----------
+# =====================================================
+# Column Analytics
+# =====================================================
 
 @app.get("/column-stats")
 def column_stats(column: str = Query(...)):
@@ -88,7 +98,9 @@ def column_stats(column: str = Query(...)):
     }
 
 
-# ---------- AI Overview Insights ----------
+# =====================================================
+# AI Dataset Insights
+# =====================================================
 
 @app.get("/ai/overview-insights")
 def ai_overview_insights():
@@ -103,7 +115,9 @@ def ai_overview_insights():
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
 
-# ---------- NLP DATA QUERY (CHAT WITH CSV) ----------
+# =====================================================
+# NLP Query (Chat with CSV)
+# =====================================================
 
 @app.post("/ai/query")
 def ai_query(payload: dict):
@@ -133,7 +147,9 @@ def ai_query(payload: dict):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# ---------- PLOT GENERATION ----------
+# =====================================================
+# Plot Generation
+# =====================================================
 
 @app.post("/plot")
 def create_plot(config: dict):
@@ -141,7 +157,110 @@ def create_plot(config: dict):
         raise HTTPException(status_code=400, detail="No dataset uploaded")
 
     try:
+        # 1. Generate plot
         fig_json = generate_plot(stored_df, config)
-        return {"plot": fig_json}
+
+        # 2. Prepare data for insight generation
+        working_df = stored_df.copy()
+
+        filters = config.get("filters", [])
+        if filters:
+            from services.plot_service import apply_filters
+            working_df = apply_filters(working_df, filters)
+
+        x = config.get("x")
+        y = config.get("y")
+        aggregation = config.get("aggregation")
+
+        if aggregation and x and y:
+            from services.plot_service import aggregate_data
+
+            plot_df = aggregate_data(working_df, x, y, aggregation)
+        else:
+            plot_df = working_df[[x, y]].dropna()
+
+        # 3. Build compressed insight context (efficient!)
+        chart_context = {
+            "chart_type": config["chart_type"],
+            "x": x,
+            "y": y,
+            "aggregation": aggregation,
+            "row_count": len(plot_df),
+            "y_stats": {
+                "min": float(plot_df[y].min()) if y else None,
+                "max": float(plot_df[y].max()) if y else None,
+                "mean": float(plot_df[y].mean()) if y else None
+            }
+        }
+
+        # 4. Generate AI insights automatically
+        insights = generate_chart_insights(chart_context)
+
+        return {
+            "plot": fig_json,
+            "insights": insights
+        }
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+
+
+# =====================================================
+# NEW — AI Chart Insights
+# =====================================================
+
+
+
+
+# =====================================================
+# NEW — TRANSFORMATION FOR ROWS AND COLUMNS
+# =====================================================
+
+@app.post("/transform")
+def transform_data(config: dict):
+    global stored_df
+
+    if stored_df is None:
+        raise HTTPException(status_code=400, detail="No dataset uploaded")
+
+    try:
+        from services.transform_service import transform_dataframe
+
+        stored_df = transform_dataframe(stored_df, config)
+
+        return {
+            "columns": list(stored_df.columns),
+            "row_count": len(stored_df),
+            "preview": stored_df.head(5).to_dict(orient="records")
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# =====================================================
+# EXPORT CSV
+# =====================================================
+
+from fastapi.responses import FileResponse
+
+
+@app.get("/export/csv")
+def export_csv():
+    global stored_df
+
+    if stored_df is None:
+        raise HTTPException(status_code=400, detail="No dataset available")
+
+    file_path = "exported_dataset.csv"
+
+    # Save current dataframe (after transforms if any)
+    stored_df.to_csv(file_path, index=False)
+
+    return FileResponse(
+        path=file_path,
+        filename="modified_dataset.csv",
+        media_type="text/csv"
+    )
