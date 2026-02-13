@@ -1,0 +1,540 @@
+================================================================================
+                    DATAINSIGHT APPLICATION OVERVIEW
+                  Complete Explanation of Frontend & Backend
+================================================================================
+
+QUICK SUMMARY
+=============
+DataInsight is a CSV visualization tool where you:
+1. Upload a CSV file
+2. Pick two columns (X and Y axes)
+3. Choose a chart type (line, bar, scatter, heatmap, histogram, box)
+4. Generate an interactive chart with AI insights
+5. Ask AI questions about your data
+
+The frontend (React/JavaScript) handles the UI. The backend (FastAPI/Python) 
+processes data and runs AI queries using Groq API.
+
+
+================================================================================
+                         FRONTEND (App.js)
+================================================================================
+
+APP STATE VARIABLES
+===================
+These are like the "memory" of the app. They store data that React watches:
+
+Core Data:
+  • file: The selected CSV file
+  • columns: List of column names from the CSV
+  • previewRows: First 5 rows of the CSV for preview
+  • rowCount: Total number of rows
+  • stats: Dataset statistics (data types, null counts, numeric summaries)
+
+Chart Configuration:
+  • chartType: Which chart to draw (line/bar/scatter/histogram/heatmap/box)
+  • xColumn: Selected column for X-axis
+  • yColumn: Selected column for Y-axis
+  • colorColumn: Optional column for coloring data points
+  • aggregation: Optional data aggregation (sum/mean/count/min/max/median)
+
+Results & Display:
+  • plotSpec: The actual chart JSON data (from Plotly library)
+  • plotInsights: AI-generated insights about the chart
+  • columnStats: Statistics for the selected X column
+  • insights: AI overview insights about the dataset
+  • question: User's question for the AI
+  • queryResult: Result from asking the AI a question
+
+UI State:
+  • plotlyReady: Boolean - has the Plotly charting library loaded?
+  • isDragging: Boolean - is user dragging a file over the dropzone?
+  • status: Success message to show user
+  • error: Error message to show user
+  • fileInputRef: Reference to hidden file input field
+  • plotRef: Reference to the chart container div
+
+
+HELPER FUNCTIONS & LOGIC
+========================
+
+canGenerate (useMemo):
+  Checks if a chart can be generated. Logic:
+  - Must have columns loaded
+  - For heatmap: always true (no X/Y needed)
+  - For histogram: need X column only
+  - For other charts: need both X and Y columns
+  Returns a boolean that disables the "Generate Plot" button
+
+insightLines & plotInsightLines (useMemo):
+  Converts insights (which could be string or array) into an array of lines
+  - Splits strings by newlines
+  - Removes bullet points and extra whitespace
+  - Filters out empty lines
+  Returns array of insight strings to display
+
+
+EFFECT HOOKS (useEffect)
+========================
+These run at specific times:
+
+1. Plotly Library Load (runs once on mount):
+   - Checks if Plotly is already loaded in the browser
+   - If not, adds a <script> tag to load it from CDN
+   - Once loaded, sets plotlyReady = true
+   - If loading fails, shows an error message
+
+2. Plot Rendering (runs when plotSpec changes):
+   - When plotSpec updates, this renders the chart
+   - Takes plotSpec.data and plotSpec.layout
+   - Calls window.Plotly.newPlot() to render the chart
+   - Makes it responsive and adds the mode bar
+   - Includes setTimeout to ensure Plotly calculates sizes correctly
+
+3. Column Stats Fetching (runs when xColumn changes):
+   - When user changes the X column, fetch stats for it
+   - Calls fetchColumnStats()
+   - Shows mean, median, std, min, max for numeric columns
+
+
+CALLBACK FUNCTIONS (useCallback)
+================================
+These are optimized functions that don't get recreated every render:
+
+fetchDatasetStats():
+  - GET /stats from backend
+  - Retrieves data types, null counts, numeric summaries
+  - Stores in setStats()
+
+fetchColumnStats(columnName):
+  - GET /column-stats?column=NAME from backend
+  - Returns mean, median, std, min, max if numeric
+  - If empty columnName, clears the stats
+  - Stores in setColumnStats()
+
+fetchOverviewInsights():
+  - GET /ai/overview-insights from backend
+  - Backend analyses dataset with AI
+  - Returns 5-7 insights about data quality, patterns, anomalies
+  - Stores in setInsights()
+
+
+UPLOAD WORKFLOW
+===============
+
+uploadFile(selectedFile):
+  1. Create FormData object (for multipart file upload)
+  2. Set status = "Uploading CSV..."
+  3. POST file to /upload endpoint
+  4. Backend returns:
+     - columns: array of column names
+     - preview: first 5 rows as objects
+     - row_count: total rows
+  5. Store all data in state variables
+  6. Auto-select first two columns as X and Y
+  7. Fetch dataset stats (mean, median, etc.)
+  8. Clear previous plots and insights
+  9. Show success status message
+
+handleUpload():
+  - Button click handler
+  - Calls uploadFile(file)
+
+handleFilePick(event):
+  - Fired when user picks file from dialog
+  - Extracts selectedFile from input
+  - Calls uploadFile() immediately
+
+handleDrop(event):
+  - Fired when user drags file over dropzone
+  - Extracts file from dataTransfer
+  - Sets isDragging = false
+  - Calls uploadFile()
+
+
+CHART GENERATION WORKFLOW
+==========================
+
+handleGenerate():
+  1. Set status = "Generating plot..."
+  2. Build payload object:
+     {
+       chart_type: string,
+       x: columnName (if provided),
+       y: columnName (if provided),
+       color: columnName (if provided),
+       aggregation: string (if provided)
+     }
+  3. POST /plot with payload
+  4. Backend returns:
+     {
+       plot: plotSpec (chart data),
+       insights: AI insights about the chart
+     }
+  5. Store plotSpec in state (triggers render)
+  6. Store plotInsights in state (display below chart)
+
+canGenerate determines if button is enabled:
+  - Heatmap: no X/Y needed (just numeric columns)
+  - Histogram: X only
+  - Others: X and Y required
+
+
+AI QUERY WORKFLOW
+=================
+
+handleAsk():
+  1. Check that question is not empty
+  2. Set status = "Running AI query..."
+  3. POST /ai/query with { question: "user question" }
+  4. Backend:
+     - Converts natural language to JSON query
+     - Applies filters, groupby, aggregations
+     - Returns structured answer
+  5. Store result in setQueryResult()
+  6. Show "AI query complete" status
+
+Chart cards in UI:
+  - Shows 6 chart type options (line, scatter, bar, histogram, box, heatmap)
+  - Each is a clickable button that sets chartType
+  - Selected one gets "selected" CSS class
+
+
+UI SECTIONS (JSX RENDERING)
+===========================
+
+Section 1: Hero
+  - App title and description
+  - Always visible
+
+Section 2: Drop Your CSV
+  - Dropzone with drag-and-drop
+  - File input button
+  - Auto-uploads when file selected
+  - Hidden file input: onClick shows dialog
+
+Section 3: Pick Columns (shown if columns.length > 0)
+  - Lists all columns as chips
+  - Each chip has two buttons: "Set X" and "Set Y"
+  - Shows selected X and Y below
+  - Clicking a button calls assignColumn()
+
+Section 4: Choose Chart Type (shown if columns.length > 0)
+  - 6 chart options with SVG previews
+  - Aggregation dropdown (sum/mean/count/min/max/median)
+  - Color column dropdown
+  - "Generate Plot" button (enabled by canGenerate logic)
+
+Section 5: Plot Output
+  - Div with ref={plotRef} where chart renders
+  - "Your generated chart will appear..." placeholder if no plotSpec
+  - Shows Plot Insights if available
+  - Shows status or error messages
+
+Section 6: Dataset Overview (shown if columns.length > 0)
+  - Total rows and columns count
+  - Data Types table (if stats loaded)
+  - Null Counts table
+  - Column stats for selected X column
+  - Preview table (first 5 rows)
+
+Section 7: AI Insights and Query (shown if columns.length > 0)
+  - Button: "Generate Overview Insights"
+  - Displays insights if generated
+  - Text input for asking questions
+  - "Ask" button
+  - Displays query result as JSON
+
+
+FLOW DIAGRAM
+============
+
+User Upload → uploadFile() → /upload API → setColumns, setStats
+                                          → auto-select X, Y
+
+User selects X/Y → assignColumn() → setXColumn/setYColumn 
+                                  → fetchColumnStats() → /column-stats
+
+User selects chart type → setChartType()
+
+User clicks Generate → handleGenerate() → /plot API → setPlotSpec
+                                       → Plotly renders chart
+
+User clicks Overview Insights → fetchOverviewInsights() → /ai/overview-insights
+                                                        → setInsights()
+
+User types question → handleAsk() → /ai/query → setQueryResult()
+
+
+================================================================================
+                         BACKEND (Python/FastAPI)
+================================================================================
+
+MAIN API ENDPOINTS
+==================
+
+POST /upload
+  Accepts: CSV file as multipart form-data
+  Does:
+    1. Reads CSV file into pandas DataFrame
+    2. Cleans data (removes NaNs, infinity values)
+    3. Stores globally in stored_df variable
+  Returns: { columns: [...], preview: [...], row_count: 123 }
+  Error: 400 if invalid CSV
+
+GET /stats
+  Requires: CSV uploaded (stored_df not None)
+  Does:
+    1. Calculates null counts per column
+    2. Gets data types for each column
+    3. Computes describe() stats (mean, std, min, max, etc.)
+  Returns: { null_counts: {...}, dtypes: {...}, shape: {...} }
+  Error: 400 if no dataset uploaded
+
+GET /column-stats?column=NAME
+  Requires: CSV uploaded + valid column name
+  Does:
+    1. Checks if column is numeric
+    2. Calculates mean, median, std, min, max
+  Returns: { mean: 1.5, median: 1.0, std: 0.5, ... }
+  Error: 400 if no dataset, 404 if column not found
+
+POST /plot
+  Accepts: { chart_type, x, y, color, aggregation }
+  Does:
+    1. Calls generate_plot() function
+    2. Applies filters if provided
+    3. Applies aggregation if provided
+    4. Generates Plotly figure
+    5. Converts to JSON format
+  Returns: { plot: {...plotly JSON...} }
+  Error: 400 if no dataset or invalid chart type
+
+GET /ai/overview-insights
+  Requires: CSV uploaded
+  Does:
+    1. Calls build_ai_context() to summarize dataset
+    2. Calls generate_insights() with AI
+    3. AI analyzes data quality, distributions, anomalies
+  Returns: { insights: "5-7 bullet points about the data" }
+  Error: 400 if no dataset, 500 if AI fails
+
+POST /ai/query
+  Accepts: { question: "user question" }
+  Requires: CSV uploaded
+  Does:
+    1. Calls generate_query() to convert question to JSON
+    2. Calls execute_query() to run the query on DataFrame
+    3. Returns both the structured query and answer
+  Returns: { structured_query: {...}, answer: result }
+  Error: 400 if question missing or query fails
+
+
+SERVICE MODULES
+===============
+
+ai_module.py - LLM Interface
+  ensure_ai_ready(): Checks GROK_API_KEY is set
+  chat_completion(messages, temperature, model):
+    - Creates OpenAI client (uses Groq API endpoint)
+    - Sends messages to LLM
+    - Returns response
+
+ai_service.py - AI Context & Prompts
+  build_ai_context(df): Summarizes dataset
+    Returns: {
+      rows, columns, nulls, dtypes, numeric_summary, sample_rows
+    }
+  
+  build_overview_prompt(context): Crafts prompt for AI
+    Asks AI to generate 5-7 insights about data quality/patterns
+  
+  generate_insights(context): Calls AI with prompt
+    Uses temperature=0.3 (consistent, less random)
+  
+  build_query_prompt(columns): Teaches AI JSON query format
+    Shows AI the exact schema it must follow
+  
+  generate_query(question, columns): Converts user question to JSON
+    Uses temperature=0 (deterministic)
+    Parses JSON response
+    Returns structured query
+
+query_service.py - Query Execution
+  execute_query(df, query): Runs structured query on DataFrame
+    Logic:
+      1. Apply filters: ==, >, <, >=, <=
+      2. Group by column if specified
+      3. Apply aggregation: mean/sum/count/min/max/median
+      4. Multiply result if "multiply" field present
+      5. Convert to JSON-safe format
+    Returns: result (dict or float)
+
+plot_service.py - Chart Generation
+  apply_filters(df, filters): Filters DataFrame by conditions
+  
+  aggregate_data(df, x, y, aggregation): Groups by X and aggregates Y
+  
+  generate_plot(df, config): Main function
+    Chart types:
+      - bar: px.bar(df, x=x, y=y, color=color)
+      - line: px.line(df, x=x, y=y, color=color)
+      - scatter: px.scatter(df, x=x, y=y, color=color)
+      - histogram: px.histogram(df, x=x, color=color)
+      - box: px.box(df, x=x, y=y, color=color)
+      - heatmap: Correlation matrix of numeric columns
+    Returns: fig.to_dict() (Plotly JSON)
+
+file_service.py - File Parsing
+  parse_csv(file): Parses uploaded CSV
+    - Reads file
+    - Cleans NaN/infinity values
+    - Returns columns, preview, row_count
+
+stats_service.py - Data Profiling
+  profile_dataframe(df): Analyzes DataFrame
+    Returns: {
+      shape, dtypes, null_counts, numeric_summary, categorical_summary
+    }
+
+
+CONFIGURATION
+==============
+
+config.py - Environment Variables
+  Loads .env files from repo root and backend folder
+  Variables used:
+    GROK_API_KEY: API key for Groq LLM
+    LLM_BASE_URL: API endpoint (default: Groq)
+    LLM_MODEL: Which model to use (default: llama-3.3-70b-versatile)
+
+
+DATA FLOW EXAMPLE
+=================
+
+1. User uploads sales.csv
+   → POST /upload
+   → stored_df = DataFrame from CSV
+   → Return columns: ["month", "revenue", "region"]
+
+2. User selects X="month", Y="revenue", type="line", no aggregation
+   → Button enabled (canGenerate = true)
+
+3. User clicks "Generate Plot"
+   → POST /plot with { chart_type: "line", x: "month", y: "revenue" }
+   → generate_plot() creates px.line chart
+   → Returns Plotly JSON
+   → Frontend renders with Plotly library
+
+4. User clicks "Generate Overview Insights"
+   → GET /ai/overview-insights
+   → AI analyzes: "Dataset has 12 months, 3 regions, no nulls..."
+   → Returns: ["• 12 monthly records across 3 regions", "• No missing data", ...]
+
+5. User asks "What's the average revenue by region?"
+   → POST /ai/query with { question: "..." }
+   → AI converts to: { groupby: "region", aggregation: "mean", column: "revenue" }
+   → execute_query(): groups by region, calculates mean revenue
+   → Returns: { "North": 50000, "South": 45000, "West": 55000 }
+
+
+ERROR HANDLING
+==============
+
+400 Bad Request:
+  - No dataset uploaded (stored_df is None)
+  - Invalid CSV file
+  - Missing required fields in requests
+  - Invalid column names
+  - Query execution fails
+
+404 Not Found:
+  - Column doesn't exist
+
+500 Internal Server Error:
+  - AI API call fails
+  - Unexpected exception during processing
+
+
+ENVIRONMENT SETUP
+=================
+
+Required:
+  - Python 3.8+
+  - FastAPI, pandas, plotly
+  - Groq API key (GROK_API_KEY environment variable)
+
+Frontend:
+  - Node.js, React
+  - API_BASE: "http://127.0.0.1:8000"
+
+CORS configured to allow:
+  - http://localhost:3000
+  - http://127.0.0.1:3000
+
+
+TESTING SCENARIOS
+=================
+
+Scenario 1: Upload and Display
+  1. Upload CSV
+  2. Select X and Y columns
+  3. Choose chart type
+  4. Click Generate
+  5. Chart should appear
+
+Scenario 2: Column Stats
+  1. Upload CSV
+  2. Change X column
+  3. Stats should update automatically (via useEffect)
+
+Scenario 3: AI Insights
+  1. Upload CSV with data
+  2. Click "Generate Overview Insights"
+  3. Should show 5-7 bullet points about data
+
+Scenario 4: Ask Question
+  1. Upload CSV
+  2. Type "What's the average of column_name?"
+  3. Click Ask
+  4. Should return AI-interpreted result
+
+Scenario 5: Different Chart Types
+  Try each chart type to ensure they all render correctly
+
+
+KEY CONCEPTS SUMMARY
+====================
+
+State Management: React useState holds all UI data
+Callbacks: useCallback prevents unnecessary function recreations
+Effects: useEffect runs side effects (data fetching, rendering)
+Memos: useMemo optimizes expensive calculations
+Refs: useRef accesses DOM elements directly
+
+Backend Globals: stored_df keeps current DataFrame in memory
+  (Note: This works for single user, but wouldn't scale to multiple users
+   - would need session/database for production)
+
+AI Integration: Groq API provides LLM functionality
+  - Takes natural language, returns structured data
+  - Used for query generation and insight generation
+
+
+REVIEW CHECKLIST
+================
+[ ] Understand state variables and what they store
+[ ] Understand upload flow: file → API → state → display
+[ ] Understand chart generation flow
+[ ] Understand how AI generates insights
+[ ] Understand how natural language questions become queries
+[ ] Understand CORS and why it's needed
+[ ] Understand why stored_df is global (and its limitations)
+[ ] Understand chart types and when canGenerate allows them
+[ ] Understand error handling (400, 404, 500)
+[ ] Understand useEffect, useCallback, useMemo, useState
+
+
+================================================================================
+                              END OF OVERVIEW
+================================================================================

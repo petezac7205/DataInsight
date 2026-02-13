@@ -149,6 +149,43 @@ def create_plot(config: dict):
 
     try:
         fig_json = generate_plot(stored_df, config)
-        return {"plot": fig_json}
+        working_df = stored_df.copy()
+
+        filters = config.get("filters", [])
+        if filters:
+            from services.plot_service import apply_filters
+            working_df = apply_filters(working_df, filters)
+
+        x = config.get("x")
+        y = config.get("y")
+        aggregation = config.get("aggregation")
+
+        if aggregation and x and y:
+            from services.plot_service import aggregate_data
+
+            plot_df = aggregate_data(working_df, x, y, aggregation)
+        else:
+            plot_df = working_df[[x, y]].dropna()
+            
+        chart_context = {
+            "chart_type": config["chart_type"],
+            "x": x,
+            "y": y,
+            "aggregation": aggregation,
+            "row_count": len(plot_df),
+            "y_stats": {
+                "min": float(plot_df[y].min()) if y else None,
+                "max": float(plot_df[y].max()) if y else None,
+                "mean": float(plot_df[y].mean()) if y else None
+            }
+        }
+        insights = generate_chart_insights(chart_context)
+
+        return {
+            "plot": fig_json,
+            "insights": insights
+        }
+        #return {"plot": fig_json}
+    
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

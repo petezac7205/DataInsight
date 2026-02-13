@@ -30,6 +30,7 @@ function App() {
   const [colorColumn, setColorColumn] = useState("");
   const [aggregation, setAggregation] = useState("");
   const [plotSpec, setPlotSpec] = useState(null);
+  const [plotInsights, setPlotInsights] = useState("");
   const [columnStats, setColumnStats] = useState(null);
   const [insights, setInsights] = useState("");
   const [question, setQuestion] = useState("");
@@ -53,6 +54,19 @@ function App() {
     }
     return [];
   }, [insights]);
+
+  const plotInsightLines = useMemo(() => {
+    if (Array.isArray(plotInsights)) {
+      return plotInsights.map((item) => String(item).trim()).filter(Boolean);
+    }
+    if (typeof plotInsights === "string") {
+      return plotInsights
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^[\s\-*â€¢]+/, "").trim())
+        .filter(Boolean);
+    }
+    return [];
+  }, [plotInsights]);
 
   const canGenerate = useMemo(() => {
     if (!columns.length) return false;
@@ -168,6 +182,7 @@ function App() {
       setColorColumn("");
       setAggregation("");
       setPlotSpec(null);
+      setPlotInsights("");
       setInsights([]);
       setQueryResult(null);
 
@@ -225,6 +240,7 @@ function App() {
 
       const data = await res.json();
       setPlotSpec(data.plot || null);
+      setPlotInsights(data.insights ?? "");
       setStatus("Plot generated.");
     } catch (err) {
       setError(err.message || "Plot generation failed.");
@@ -413,6 +429,18 @@ function App() {
             </p>
           )}
         </div>
+        {!!plotInsightLines.length && (
+          <div className="stats-single">
+            <h3>Plot Insights</h3>
+            <div className="insights-container">
+              {plotInsightLines.map((line, index) => (
+                <div key={`${line}-${index}`} className="insight-card">
+                  {line}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {(status || error) && (
           <div className="status-wrap">
             {status && <p className="status success">{status}</p>}
