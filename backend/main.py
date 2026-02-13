@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import numpy as np
 from io import StringIO
@@ -7,15 +8,27 @@ from io import StringIO
 from services.ai_service import (
     build_ai_context,
     generate_insights,
-    generate_query
+    generate_query,
+    generate_chart_insights
 )
+from fastapi.responses import FileResponse
+from services.ai_module import ensure_ai_ready
+from services.dataset_store import load_dataset, save_dataset
 from services.query_service import execute_query
 from services.plot_service import generate_plot
 
 app = FastAPI()
 
-stored_df: pd.DataFrame | None = None
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------- Utilities ----------
 
@@ -29,8 +42,6 @@ def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 @app.post("/upload")
 async def upload_csv(file: UploadFile = File(...)):
-    global stored_df
-
     try:
         contents = await file.read()
         df = pd.read_csv(StringIO(contents.decode("utf-8")))
@@ -38,7 +49,7 @@ async def upload_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Invalid CSV file")
 
     df = clean_dataframe(df)
-    stored_df = df
+    save_dataset(df)
 
     return {
         "columns": list(df.columns),
@@ -51,8 +62,7 @@ async def upload_csv(file: UploadFile = File(...)):
 
 @app.get("/stats")
 def get_stats():
-    if stored_df is None:
-        raise HTTPException(status_code=400, detail="No dataset uploaded")
+    stored_df = load_dataset()
 
     return {
         "null_counts": stored_df.isnull().sum().to_dict(),
@@ -68,8 +78,7 @@ def get_stats():
 
 @app.get("/column-stats")
 def column_stats(column: str = Query(...)):
-    if stored_df is None:
-        raise HTTPException(status_code=400, detail="No dataset uploaded")
+    stored_df = load_dataset()
 
     if column not in stored_df.columns:
         raise HTTPException(status_code=404, detail="Column not found")
@@ -89,31 +98,30 @@ def column_stats(column: str = Query(...)):
 
 
 # ---------- AI Overview Insights ----------
-
 @app.get("/ai/overview-insights")
 def ai_overview_insights():
-    if stored_df is None:
-        raise HTTPException(status_code=400, detail="No dataset uploaded")
+    stored_df = load_dataset()
 
     try:
+        ensure_ai_ready()
         context = build_ai_context(stored_df)
         insights = generate_insights(context)
         return {"insights": insights}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
-
 # ---------- NLP DATA QUERY (CHAT WITH CSV) ----------
 
 @app.post("/ai/query")
 def ai_query(payload: dict):
-    if stored_df is None:
-        raise HTTPException(status_code=400, detail="No dataset uploaded")
+    stored_df = load_dataset()
 
     if "question" not in payload:
         raise HTTPException(status_code=400, detail="Missing question")
 
     user_question = payload["question"]
+
+    ensure_ai_ready()
 
     query_json = generate_query(
         user_question,
@@ -137,8 +145,7 @@ def ai_query(payload: dict):
 
 @app.post("/plot")
 def create_plot(config: dict):
-    if stored_df is None:
-        raise HTTPException(status_code=400, detail="No dataset uploaded")
+    stored_df = load_dataset()
 
     try:
         fig_json = generate_plot(stored_df, config)

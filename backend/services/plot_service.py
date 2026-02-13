@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.express as px
+import json
 
 
 # -------------------- Filters --------------------
@@ -121,4 +122,6 @@ def generate_plot(df: pd.DataFrame, config: dict):
     else:
         raise ValueError("Unsupported chart type")
 
-    return fig.to_dict()
+    # Convert to plain JSON-safe Python structures.
+    return json.loads(fig.to_json())
+

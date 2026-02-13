@@ -1,8 +1,5 @@
 import json
-from openai import OpenAI
-from core.config import OPENAI_API_KEY, MODEL_NAME
-
-client = OpenAI(api_key=OPENAI_API_KEY)
+from services.ai_module import chat_completion
 
 
 # -----------------------------
@@ -42,10 +39,9 @@ Be concise.
 def generate_insights(context):
     prompt = build_overview_prompt(context)
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
+    response = chat_completion(
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
+        temperature=0.3,
     )
 
     return response.choices[0].message.content
@@ -100,13 +96,12 @@ No explanations.
 def generate_query(question, columns):
     system_prompt = build_query_prompt(columns)
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
+    response = chat_completion(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": question}
         ],
-        temperature=0
+        temperature=0,
     )
 
     content = response.choices[0].message.content
@@ -118,3 +113,36 @@ def generate_query(question, columns):
             "clarification_needed": True,
             "question": "I could not interpret the question. Please rephrase."
         }
+    
+    # ============================================================
+# NEW — CHART INSIGHT GENERATION
+# ============================================================
+
+
+def build_chart_prompt(chart_context):
+    return f"""
+You are a senior data analyst.
+
+Chart information:
+{json.dumps(chart_context, indent=2)}
+
+Generate 4–6 concise insights about:
+• trends
+• comparisons
+• anomalies
+• practical takeaways
+
+Use bullet points.
+Avoid generic statements.
+"""
+
+
+def generate_chart_insights(chart_context):
+    prompt = build_chart_prompt(chart_context)
+
+    response = chat_completion(
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+
+    return response.choices[0].message.content
