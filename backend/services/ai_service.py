@@ -5,9 +5,9 @@ from core.config import OPENAI_API_KEY, MODEL_NAME
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-# -----------------------------
-# OVERVIEW INSIGHTS (existing)
-# -----------------------------
+# ============================================================
+# DATASET OVERVIEW INSIGHTS
+# ============================================================
 
 def build_ai_context(df):
     return {
@@ -40,70 +40,56 @@ Be concise.
 
 
 def generate_insights(context):
-    prompt = build_overview_prompt(context)
-
     response = client.chat.completions.create(
         model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": build_overview_prompt(context)}],
         temperature=0.3
     )
-
     return response.choices[0].message.content
 
 
-# --------------------------------
-# STRUCTURED QUERY GENERATION
-# --------------------------------
+# ============================================================
+# NLP → STRUCTURED QUERY GENERATION
+# ============================================================
 
 def build_query_prompt(columns):
     return f"""
-You convert natural language questions into structured JSON queries
-for a pandas dataframe.
+Convert natural language into structured JSON queries for pandas.
 
-You MUST follow this schema exactly:
+Schema:
 
 {{
   "filters": [
-    {{
-      "column": "column_name",
-      "operator": "== | > | < | >= | <=",
-      "value": "value"
-    }}
+    {{ "column": "name", "operator": "== | > | < | >= | <=", "value": value }}
   ],
-  "groupby": "column_name",
+  "groupby": "column",
   "aggregation": "mean | sum | count | min | max | median",
-  "column": "column_name_for_aggregation",
+  "column": "target_column",
   "multiply": number (optional)
 }}
 
 Rules:
-- filters is optional
-- groupby is optional
-- multiply is optional
-- aggregation is required
-- column is required except when aggregation is "count"
-- Use exact column names from this list:
+- filters optional
+- groupby optional
+- multiply optional
+- aggregation required
+- column required except for count
+- Use ONLY these columns:
 {columns}
 
-If the question is ambiguous, return:
+If ambiguous return:
 
-{{
-  "clarification_needed": true,
-  "question": "Ask user for clarification"
-}}
+{{ "clarification_needed": true, "question": "ask user" }}
 
-Return ONLY valid JSON.
-No explanations.
+Return only JSON.
 """
 
 
 def generate_query(question, columns):
-    system_prompt = build_query_prompt(columns)
-
     response = client.chat.completions.create(
         model=MODEL_NAME,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": build_query_prompt(columns)},
             {"role": "user", "content": question}
         ],
         temperature=0
@@ -118,3 +104,39 @@ def generate_query(question, columns):
             "clarification_needed": True,
             "question": "I could not interpret the question. Please rephrase."
         }
+
+
+# ============================================================
+# NEW — CHART INSIGHT GENERATION
+# ============================================================
+
+
+def build_chart_prompt(chart_context):
+    return f"""
+You are a senior data analyst.
+
+Chart information:
+{json.dumps(chart_context, indent=2)}
+
+Generate 4–6 concise insights about:
+• trends
+• comparisons
+• anomalies
+• practical takeaways
+
+Use bullet points.
+Avoid generic statements.
+"""
+
+
+def generate_chart_insights(chart_context):
+    prompt = build_chart_prompt(chart_context)
+
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3
+    )
+
+    return response.choices[0].message.content
+
