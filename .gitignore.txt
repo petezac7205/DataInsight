@@ -1,0 +1,36 @@
+# Environment files
+.env
+**/.env
+**/.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Build artifacts
+*.log
+npm-debug.log*
+.DS_Store
+
+# Generated files
+dataset.csv
+*.csv
+
+# IDE
+.vscode/
+.idea/
+
+# VirtualBox (these shouldn't be here!)
+*.vbox
+*.vbox-prev
+*.vdi
+*.vmdk
+.windows.xml

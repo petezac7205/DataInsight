@@ -1,0 +1,15 @@
+# Environment
+.env
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+
+# Generated files
+dataset.csv
+*.csv
+
+# IDE
+.vscode/
+.idea/
