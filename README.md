@@ -44,8 +44,8 @@ DataInsight is a web-based **Data Analysis & Transformation Developer Tool** tha
 - Interactive Plotly visualizations
 - AI-generated dataset insights
 
-##Natural Language Query System
--DataInsight allows users to query uploaded datasets using plain English instead of writing code or SQL.
+### Natural Language Query System
+- DataInsight allows users to query uploaded datasets using plain English instead of writing code or SQL.
 
 ### Visualization
 Supported charts:
